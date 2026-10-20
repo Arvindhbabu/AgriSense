@@ -31,6 +31,8 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [cropType, setCropType] = useState("wheat");
   const [userId, setUserId] = useState("farmer_web");
+  const [location, setLocation] = useState("");
+  const [marketRegion, setMarketRegion] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState("checking");
@@ -98,6 +100,8 @@ export default function App() {
       formData.append("file", file);
       formData.append("crop_type", cropType);
       formData.append("user_id", userId.trim() || "farmer_web");
+      formData.append("location", location.trim());
+      formData.append("market_region", marketRegion.trim());
       const response = await fetch(API_BASE + "/upload-start", { method: "POST", body: formData });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not start analysis.");
@@ -216,6 +220,10 @@ export default function App() {
               <div className="form-row">
                 <label>Crop type<select value={cropType} onChange={(e) => setCropType(e.target.value)}><option value="wheat">Wheat</option><option value="rice">Rice</option><option value="tomato">Tomato</option><option value="potato">Potato</option><option value="maize">Maize</option><option value="cotton">Cotton</option><option value="other">Other / unspecified</option></select></label>
                 <label>Farmer / session ID<input value={userId} onChange={(e) => setUserId(e.target.value)} maxLength={120} placeholder="farmer_web" /></label>
+              </div>
+              <div className="form-row form-row-extra">
+                <label>Farm location for weather<input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={200} placeholder="City or latitude,longitude" /></label>
+                <label>Market state (optional)<input value={marketRegion} onChange={(e) => setMarketRegion(e.target.value)} maxLength={100} placeholder="Tamil Nadu" /></label>
               </div>
               <div className="upload-footer"><div className="privacy-note"><span>▣</span><p>Image is processed by your configured local API.<br /><b>Not a confirmed agricultural diagnosis.</b></p></div><button className="primary-button" type="submit" disabled={busy || connection === "offline"}>{busy ? <><span className="spinner" /> Analyzing…</> : <>Run assessment <span>↗</span></>}</button></div>
             </form>
