@@ -65,6 +65,21 @@ class MarketToolTests(unittest.TestCase):
         result = tool.get_price("Rice")
         self.assertIsNone(result["avg_price_per_kg"])
         self.assertIn("No matching records", result["note"])
+        self.assertNotIn("observed_at", result)
+
+    def test_fetch_time_is_not_mislabeled_as_source_observation(self):
+        session = FakeSession({
+            "records": [{
+                "commodity": "Rice",
+                "state": "Tamil Nadu",
+                "market": "Test Mandi",
+                "modal_price": "2500",
+            }]
+        })
+        tool = MarketTool(api_key="test-key", resource_id="test-resource", session=session)
+        result = tool.get_price("Rice")
+        self.assertIsNone(result["observed_at"])
+        self.assertTrue(result["fetched_at"])
 
 
 if __name__ == "__main__":
