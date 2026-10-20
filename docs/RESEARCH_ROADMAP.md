@@ -8,21 +8,22 @@ AgriSense is evolving from a multi-agent crop-diagnosis demo into an **evidence-
 
 - **Diagnosis agent** — runs the configured image-classification backend. A simple color heuristic may be used as a demo fallback; it is not a validated disease classifier.
 - **Advisory agent** — generates a structured response or conservative rule-based guidance.
-- **Climate agent** — accepts a configured weather tool and reports its coverage/availability.
-- **Market agent** — accepts a configured market-data tool and reports its coverage/availability.
+- **Climate agent** — uses Open-Meteo geocoding/forecast APIs when a farm location is supplied; risk flags are transparent general weather heuristics, not disease predictions.
+- **Market agent** — optionally queries a configured data.gov.in/Agmarknet resource; reports unavailable when credentials/resource/schema are missing.
 - **Orchestrator** — coordinates agents, stores short-lived user context, and emits structured progress events.
 - **FastAPI** — serves synchronous analysis and real-time job updates.
-- **React UI** — intended to show upload, agent timeline, results, evidence freshness, and case history.
+- **Image-quality gate** — flags severely dark/overexposed, extremely low-resolution, or nearly uniform captures before permitting crop-specific advisory.
+- **React UI** — provides upload, image-quality feedback, live agent timeline, results, evidence status, report export, and case history.
 
 ## Proposed next-level novelty
 
 **Evidence-Grounded, Uncertainty-Aware Crop Triage (EGUCT)**
 
-1. **Uncertainty gate:** distinguish a confident prediction from uncertain, out-of-scope, or poor-quality inputs. When confidence is weak, request a better image or expert review instead of inventing a disease.
-2. **Evidence provenance:** attach source, observation time, location/crop scope, and freshness to weather/market signals. Missing integrations are explicitly marked unavailable—not presented as live.
-3. **Cross-agent consistency:** compare diagnosis, weather risk, and advisory claims; surface contradictions and suppress unsupported treatment details.
-4. **Real-time trace:** stream structured events per analysis session to the UI.
-5. **Reproducible evaluation:** measure per-class precision/recall/F1, calibration, abstention rate, latency, and recommendation grounding.
+1. **Image-quality-aware abstention:** use interpretable capture checks and the diagnosis uncertainty gate to trigger a retake or expert review instead of unsupported treatment claims.
+2. **Evidence provenance:** keep source observation time separate from retrieval time; include provider/source and forecast target dates. Missing integrations remain visibly unavailable.
+3. **Evidence-contextual advisory:** inject the current diagnosis, weather summary, and available market data into the advisory prompt while forbidding invented prices, weather, and pesticide dosage.
+4. **Real-time trace:** stream ordered pipeline events, store report JSON, and expose case-history endpoints.
+5. **Reproducible evaluation:** measure per-class precision/recall/F1, calibration, image-quality abstention, coverage-versus-risk, p50/p95 latency, and unsupported-claim rate.
 
 These are engineering/research hypotheses to evaluate, not claims of proven novelty or improved accuracy. The strongest academic contribution will come from testing this pipeline against a baseline on a labeled dataset.
 
@@ -42,10 +43,18 @@ Set optional API keys in environment variables. Never commit secrets:
 $env:GEMINI_API_KEY = "your-key"
 ```
 
-Start the existing API:
+Start the real-time API from the repository root:
 
 ```powershell
-python -m uvicorn api:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn api_realtime:app --reload --host 127.0.0.1 --port 8000
+```
+
+In a second terminal, start the dashboard:
+
+```powershell
+cd frontend
+npm install
+npm run dev
 ```
 
 API docs: http://127.0.0.1:8000/docs
@@ -62,7 +71,7 @@ Multipart form fields:
 - `user_id` — session identity for the demo (optional)
 
 ### Real-time mode
-The `api_realtime.py` endpoint can provide progress streaming. Keep its API contract aligned with `Orchestrator.run_case(user_id, image_input, crop_type=None, progress_callback=None)`. Do not replace the project orchestrator with a dummy classifier; use the configured diagnosis agent and clearly label any demo fallback.
+The `api_realtime.py` endpoint streams progress and accepts multipart fields `file`, `crop_type`, `user_id`, `location`, and `market_region`. The orchestrator contract is `run_case(user_id, image_input, crop_type=None, progress_callback=None, config=None)`. Do not replace the multi-agent path with a dummy classifier; demo fallback is explicitly identified.
 
 ## Validation plan
 
