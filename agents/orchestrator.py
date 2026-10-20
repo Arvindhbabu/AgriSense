@@ -180,6 +180,11 @@ class Orchestrator:
 
         stored_memory = self.memory.get_user(user_id) or {}
         user_memory = dict(stored_memory)
+        # Location and market region are explicit per-case inputs, not inferred from account metadata.
+        for context_key in ("location", "market_region"):
+            supplied_value = config.get(context_key)
+            if isinstance(supplied_value, str) and supplied_value.strip():
+                user_memory[context_key] = supplied_value.strip()[:200]
 
         # 1. Image-based diagnosis
         emit("diagnosis.started", {"message": "Validating image and running configured diagnosis backends"})
@@ -225,7 +230,8 @@ class Orchestrator:
         emit("market.started", {"message": "Checking configured market-data integration"})
         try:
             crop_for_market = crop_type or diagnosis.get("crop") or "unknown"
-            market_info = self.market.get_market_insights(crop_for_market)
+            market_region = user_memory.get("market_region")
+            market_info = self.market.get_market_insights(crop_for_market, region=market_region)
         except Exception as exc:
             logger.warning("Market agent failed for case %s: %s", case_id, exc)
             market_info = {"error": str(exc), "note": "Market integration unavailable"}
