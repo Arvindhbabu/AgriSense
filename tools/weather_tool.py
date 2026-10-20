@@ -166,7 +166,8 @@ class WeatherTool:
                 "forecast": summary["daily_summary"],
                 "source": "Open-Meteo Forecast API",
                 "geocoding_source": "Open-Meteo Geocoding API" if not self._parse_coordinates(str(location)) else None,
-                "observed_at": self._now(),
+                "fetched_at": self._now(),
+                "forecast_window_days": len(summary["daily_summary"]),
                 "note": (
                     "General weather-exposure heuristics for the selected forecast window; "
                     "not a crop-specific disease prediction."
@@ -186,5 +187,5 @@ class WeatherTool:
                 "error": "weather_provider_unavailable",
                 "note": str(exc),
                 "source": "Open-Meteo Forecast API",
-                "observed_at": self._now(),
+                "fetched_at": self._now(),
             }
