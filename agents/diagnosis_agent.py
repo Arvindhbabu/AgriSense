@@ -16,6 +16,7 @@ import re
 
 import numpy as np
 from PIL import Image
+from utils.image_quality import assess_image_quality
 
 logger = logging.getLogger("agrisense.diagnosis")
 logger.setLevel(logging.INFO)
@@ -229,12 +230,14 @@ class DiagnosisAgent:
             confidence = 0.0
         confidence = min(max(confidence, 0.0), 1.0)
 
+        raw_review = payload.get("needs_expert_review", False)
+        needs_review = raw_review is True or str(raw_review).strip().lower() in {"true", "yes", "1"}
         return {
             "label": str(payload.get("label", "unknown")).strip().lower().replace(" ", "_"),
             "confidence": confidence,
             "crop": payload.get("crop") or crop_type,
             "notes": str(payload.get("notes", "")),
-            "needs_expert_review": bool(payload.get("needs_expert_review", False)),
+            "needs_expert_review": needs_review,
             "backend": "gemini",
             "model_version": model_name,
             "confidence_calibrated": False,
@@ -242,6 +245,7 @@ class DiagnosisAgent:
 
     def run(self, image_input, crop_type=None):
         pil_img = self._load_image(image_input)
+        image_quality = assess_image_quality(pil_img)
         last_error = None
 
         for backend in self.backends:
@@ -257,6 +261,9 @@ class DiagnosisAgent:
                     raise ValueError("Unknown diagnosis backend: " + str(backend))
 
                 result.setdefault("crop", crop_type)
+                result["image_quality"] = image_quality
+                if image_quality.get("review_required"):
+                    result["needs_expert_review"] = True
                 return result
             except Exception as exc:
                 logger.warning("Diagnosis backend %s failed: %s", backend, exc)
@@ -269,4 +276,6 @@ class DiagnosisAgent:
             "crop": crop_type,
             "error": "All configured diagnosis backends failed.",
             "last_backend_error": str(last_error) if last_error else None,
+            "image_quality": image_quality,
+            "needs_expert_review": bool(image_quality.get("review_required")),
         }
