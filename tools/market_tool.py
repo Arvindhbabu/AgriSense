@@ -69,7 +69,7 @@ class MarketTool:
 
         url = "https://api.data.gov.in/resource/" + self.resource_id
         params = {"api-key": self.api_key, "format": "json", "limit": 100, "offset": 0}
-        params["filters[commodity]"] = crop
+        params["filters[commodity]"] = str(crop).strip().title()
         if region:
             params["filters[state]"] = region
 
