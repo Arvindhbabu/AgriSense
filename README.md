@@ -78,9 +78,27 @@ Open the Vite URL shown in the terminal (normally http://127.0.0.1:5173).
 
 The dashboard can set its API location using `frontend/.env.example` as a template. Default API URL is `http://127.0.0.1:8000`.
 
-## Environment variables
+## Configure live context providers
 
-Copy `.env.example` to a local `.env`, then fill in only the integrations you actually use. Or set variables directly in the shell:
+### Weather
+
+The dashboard's **Farm location** field accepts a city/region name or `latitude,longitude`. The adapter resolves names with the Open-Meteo Geocoding API and requests a short-range forecast from the Open-Meteo Forecast API. These are general weather-exposure heuristics (heat, heavy rain, wind), **not a crop-disease forecast**. The report distinguishes forecast retrieval time from a source observation time. Review the provider's [API documentation](https://open-meteo.com/en/docs) and [geocoding documentation](https://open-meteo.com/en/docs/geocoding-api).
+
+### Mandi market prices (optional)
+
+AgriSense can query an Agmarknet resource through India's [Open Government Data mandi-price dataset](https://www.data.gov.in/resource/current-daily-price-various-commodities-various-markets-mandi). To enable it, register for a data.gov.in API key and select the resource ID that you will query. Add these values to your local `.env`:
+
+```dotenv
+DATA_GOV_IN_API_KEY=your_data_gov_in_key
+DATA_GOV_IN_MARKET_RESOURCE_ID=your_selected_resource_id
+DATA_GOV_IN_PRICE_UNIT=quintal
+```
+
+The adapter assumes the configured resource's modal price is per quintal by default and converts it to INR/kg. Set `DATA_GOV_IN_PRICE_UNIT=kg` only when your chosen dataset actually reports prices per kilogram. Resource schemas vary; verify that the selected resource returns the expected commodity, state, market, date, and price columns. A single record does not establish a price trend, so trend remains `unknown` rather than being fabricated.
+
+### Optional LLM / MCP integrations
+
+Copy `.env.example` to a local `.env`, then fill in only the integrations you actually use. Or set variables directly in PowerShell:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-key"
