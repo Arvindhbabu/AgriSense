@@ -1,92 +1,118 @@
-# AgriSense — Autonomous Crop Intelligence
+# AgriSense — Evidence-Grounded Crop Intelligence
 
-AgriSense is a multi-agent crop decision-support prototype combining image-based crop triage, advisory generation, market context, and climate risk. The goal of the next iteration is to make it **evidence-grounded, uncertainty-aware, testable, and useful in real workflows**—not merely to add more agents.
+AgriSense is a multi-agent crop decision-support prototype with image-based triage, a conservative advisory gate, weather/market context, real-time progress streaming, and saved reports.
 
-> **Safety:** AI results are decision support, not a definitive diagnosis. Do not apply pesticides based on an unverified prediction; use local agronomist/extension guidance and follow product labels.
+> **Safety:** AI results are decision support, not a definitive diagnosis. Do not apply pesticides based on an unverified prediction; use local agricultural extension guidance and follow product labels.
+
+## What is implemented on this branch
+
+- **Real-time FastAPI API** — multipart image upload, WebSocket progress messages, synchronous analysis endpoint, health check, and input-size/image validation.
+- **Uncertainty-aware decision gate** — flags unknown/invalid/low-confidence predictions and identifies the current RGB color-statistics heuristic as a demo-only method. Crop-specific advice is suppressed in these cases.
+- **Evidence provenance status** — market and climate outputs are labelled unavailable, unverified, or available with supplied provenance.
+- **Report persistence and history** — completed reports are written as JSON under `outputs/`; `GET /history` lists recent cases and `GET /cases/{case_id}` retrieves a report.
+- **React + Vite dashboard** — drag-and-drop upload, live pipeline timeline, result/uncertainty cards, evidence status, report export, and saved-case history.
+- **Automated validation** — Python unit tests, compilation checks, and a frontend build in GitHub Actions.
 
 ## Architecture
 
 ```text
-Image upload
+Crop image
    |
-FastAPI validation + analysis session
+FastAPI upload validation
    |
-Orchestrator ── progress events ──> React interface
+Real-time session + WebSocket event queue
    |
-   +── Diagnosis agent (configured classifier/backend)
-   +── Evidence/uncertainty gate
-   +── Climate agent (configured weather tool)
-   +── Market agent (configured market tool)
-   +── Advisory agent (grounded recommendations)
+Orchestrator
+   +-- DiagnosisAgent
+   +-- Uncertainty gate ---- uncertain/demo output --> conservative next steps
+   +-- AdvisoryAgent ------- provisional output ----> provisional guidance
+   +-- MarketAgent --------- evidence status/provenance
+   +-- ClimateAgent -------- evidence status/provenance
    |
-Traceable report + session memory
+JSON report + local history + dashboard
 ```
 
-## Proposed research contribution: Evidence-Grounded, Uncertainty-Aware Crop Triage (EGUCT)
+## Research direction: Evidence-Grounded, Uncertainty-Aware Crop Triage (EGUCT)
 
-- **Uncertainty gate:** identify low-confidence and out-of-scope cases; request a clearer image or expert review instead of confidently guessing.
-- **Evidence provenance:** attach source and timestamp to weather and market values; explicitly display unavailable data rather than fabricating "live" information.
-- **Cross-agent consistency:** check whether the advice is supported by diagnosis and available climate/market evidence; suppress unsupported treatment specifics.
-- **Real-time observability:** stream structured stage events to the UI.
-- **Reproducible evaluation:** report per-class precision/recall/F1, calibration, abstention rate, and p50/p95 latency.
+The proposed system-level contribution combines:
 
-These are proposed research directions, not claims of proven novelty or improved accuracy. Validate them empirically against a baseline on held-out labeled data.
+1. **Uncertainty-aware abstention:** don't turn a weak or out-of-scope result into confident treatment advice.
+2. **Evidence provenance:** keep source and observation time alongside external data, and show when integrations are not connected.
+3. **Safety-oriented orchestration:** gate downstream advice based on diagnosis quality and emit traceable stage events.
+4. **Reproducible evaluation:** measure macro-F1, per-class precision/recall, calibration error, abstention coverage/risk, and p50/p95 latency.
 
-## Current limitations to address
+This is a research direction, not a claim of proven scientific novelty or increased model accuracy. The strongest academic evidence will come from comparisons on a held-out labelled dataset.
 
-- The default local classifier includes a green-channel heuristic; it is only a demonstration fallback, not a validated crop-disease model.
-- Market and climate tools are optional integrations and can return unavailable/placeholder data.
-- The memory bank is process-local and is reset when the app restarts.
-- API keys must be stored in environment variables or a secrets manager, never committed.
+## Important limitations
 
-## Local setup (Windows PowerShell)
+- The default local diagnosis path includes a green-channel/RGB heuristic. It is **not** a trained disease-specific classifier. The gate marks it as demo-only and suppresses crop-specific treatment recommendations.
+- Market and weather agents remain integration adapters. Data is not “live” unless a real source is configured and returns usable data with provenance.
+- Model-reported confidence is not independently calibrated by this project yet.
+- The memory bank is process-local and resets on restart. Reports are persisted locally, but this is not yet a multi-user production database.
+- Crop-specific recommendations require local validation; the system deliberately avoids medication-like certainty.
+
+## Run locally on Windows
+
+Use two terminals from the repository root.
+
+### Terminal 1 — backend
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m uvicorn api:app --reload --host 127.0.0.1 --port 8000
+python -m uvicorn api_realtime:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000/docs to test the existing API.
+Backend docs: http://127.0.0.1:8000/docs
 
-Optional key setup for the current PowerShell session:
+### Terminal 2 — frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (normally http://127.0.0.1:5173).
+
+The dashboard can set its API location using `frontend/.env.example` as a template. Default API URL is `http://127.0.0.1:8000`.
+
+## Environment variables
+
+Copy `.env.example` to a local `.env`, then fill in only the integrations you actually use. Or set variables directly in the shell:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-key"
 $env:MCP_GATEWAY_URL = "http://localhost:8080"
 ```
 
-Never put real secrets into source control.
+Never commit real keys, passwords, or local environment files.
 
-## API
+## API endpoints
 
-### `GET /`
-Health status.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/` | Health status and active session count |
+| POST | `/upload-start` | Start analysis; multipart fields: `file`, `crop_type`, `user_id` |
+| WS | `/ws/{session_id}` | Stream structured progress, result, error, and finished events |
+| POST | `/analyze` | Run analysis without a WebSocket progress stream |
+| GET | `/history?limit=20` | List recent saved reports |
+| GET | `/cases/{case_id}` | Retrieve a saved report by UUID |
 
-### `POST /analyze`
-Multipart form fields:
-- `file`: image
-- `crop_type`: crop name (optional; defaults to wheat)
-- `user_id`: demo user/session identity (optional)
+## Tests
 
-The real-time API should preserve compatibility with the current orchestrator signature:
-`run_case(user_id, image_input, crop_type=None, progress_callback=None)`.
-Do not replace this multi-agent call path with a dummy model.
+```powershell
+python -m compileall -q agents utils api.py api_realtime.py run.py
+python -m unittest discover -s tests -v
+```
 
-## Evaluation protocol
+The CI workflow additionally runs `npm install` and `npm run build` for the dashboard.
 
-1. Use a labeled, held-out dataset. Prevent near-duplicate/source leakage between train and test splits.
-2. Report macro-F1, per-class precision/recall, confusion matrix, calibration error, coverage-versus-risk under abstention, and p50/p95 response latency.
-3. Compare three systems: base diagnosis; diagnosis + uncertainty gate; full evidence-grounded pipeline.
-4. Test blur, low light, non-leaf images, corrupt uploads, unavailable tools, stale data, and conflicting evidence.
-5. Version the model, dataset provenance, class mapping, and experiment settings.
+## Evaluation plan
 
-## Roadmap
-
-1. Align the real-time API and orchestrator interface; add tests.
-2. Replace/demo-label heuristic prediction with a trained and evaluated classifier.
-3. Add image quality and uncertainty checks.
-4. Connect reliable climate/market sources with provenance and freshness.
-5. Build a polished dashboard with live progress, evidence cards, explainability, and case history.
-6. Publish measured experiments and limitations.
+1. Use a held-out labelled dataset with source/plant separation where possible to reduce leakage.
+2. Report a confusion matrix, macro-F1, per-class precision/recall, calibration error, abstention rate, and p50/p95 latency.
+3. Compare a base classifier, classifier + uncertainty gate, and full evidence-grounded pipeline.
+4. Test blur, low light, non-leaf images, corrupt uploads, stale data, tool outages, and conflicting signals.
+5. Record dataset provenance, model version, class mapping, threshold, and experimental settings.

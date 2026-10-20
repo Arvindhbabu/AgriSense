@@ -1,6 +1,8 @@
-fastapi
-uvicorn[standard]
-google-genai
-python-dotenv
-pillow
-requests
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+google-genai>=1.0
+python-dotenv>=1.0
+pillow>=10.0
+numpy>=1.24
+requests>=2.31
