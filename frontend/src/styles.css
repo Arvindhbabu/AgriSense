@@ -166,6 +166,11 @@ h1 em { color: #347750; font-weight: 500; font-style: normal; }
 .confidence-track { height: 5px; overflow: hidden; margin-top: 7px; border-radius: 4px; background: #e8eee5; }
 .confidence-track span { display: block; height: 100%; max-width: 100%; border-radius: 4px; background: linear-gradient(90deg, #8cbe83, #337b4b); }
 .muted-caption { display: block; margin-top: 8px; color: #9ca69c; font-size: 9px; }
+.image-quality-summary { margin-top: 13px; padding: 10px 11px; border: 1px solid #e0e9dd; border-radius: 8px; background: #f8fbf6; }
+.image-quality-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #738373; font-size: 9px; }
+.image-quality-summary > div strong { color: #3f714c; font: 500 10px var(--mono); }
+.image-quality-summary p { margin: 6px 0 0; color: #818f81; font-size: 9px; line-height: 1.55; }
+.image-quality-summary small { display: block; margin-top: 5px; color: #9a7956; font-size: 8px; text-transform: capitalize; }
 .reason-list { display: grid; gap: 5px; margin-top: 12px; padding-top: 11px; border-top: 1px solid #e6ede2; color: #8c7c64; font-size: 9px; text-transform: capitalize; }
 .advice-text { white-space: pre-line; }
 .safety-callout { display: flex; align-items: flex-start; gap: 9px; margin-top: 13px; padding: 11px; border-radius: 8px; background: #fff7e9; color: #8b6839; }
