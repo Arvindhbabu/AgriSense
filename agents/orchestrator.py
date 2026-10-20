@@ -183,9 +183,14 @@ class Orchestrator:
         user_memory = dict(stored_memory)
         # Location and market region are explicit per-case inputs, not inferred from account metadata.
         for context_key in ("location", "market_region"):
+            if context_key not in config:
+                continue
             supplied_value = config.get(context_key)
             if isinstance(supplied_value, str) and supplied_value.strip():
                 user_memory[context_key] = supplied_value.strip()[:200]
+            else:
+                # An explicitly blank UI field clears stale per-user location context.
+                user_memory.pop(context_key, None)
 
         # 1. Image-based diagnosis
         emit("diagnosis.started", {"message": "Validating image and running configured diagnosis backends"})
