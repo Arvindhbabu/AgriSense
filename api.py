@@ -1,14 +1,17 @@
 # api.py
 import os
 import io
+import asyncio
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from google import genai
 from PIL import Image
 
 from agents.orchestrator import Orchestrator
+from tools.market_tool import MarketTool
+from tools.weather_tool import WeatherTool
 
-app = FastAPI(title="AgriSense Agents API", version="1.0.0")
+app = FastAPI(title="AgriSense Agents API", version="2.0.0")
 
 
 def create_gemini_client():
@@ -26,7 +29,9 @@ gemini_client = create_gemini_client()
 orch = Orchestrator(
     gemini_client=gemini_client,
     mcp_gateway_url=os.environ.get("MCP_GATEWAY_URL"),
-    local_model=None,  # replace with your model if you want
+    market_tool=MarketTool(),
+    weather_tool=WeatherTool(),
+    local_model=None,  # configure your trained model here
 )
 
 
@@ -40,6 +45,8 @@ async def analyze(
     file: UploadFile = File(...),
     crop_type: str = Form("wheat"),
     user_id: str = Form("farmer_api"),
+    location: str = Form(""),
+    market_region: str = Form(""),
 ):
     """
     POST /analyze
@@ -49,8 +56,9 @@ async def analyze(
       user_id: optional user id
     """
     try:
-        content = await file.read()
-        # optional: validate image
+        content = await file.read(int(os.getenv("AGRISENSE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024))) + 1)
+        if not content or len(content) > int(os.getenv("AGRISENSE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024))):
+            return JSONResponse(status_code=413, content={"error": "Image is empty or exceeds the upload limit."})
         Image.open(io.BytesIO(content)).verify()
     except Exception:
         return JSONResponse(
@@ -59,12 +67,18 @@ async def analyze(
         )
 
     try:
-        result = orch.run_case(
-            user_id=user_id,
+        result = await asyncio.to_thread(
+            orch.run_case,
+            user_id=user_id.strip()[:120] or "farmer_api",
             image_input=io.BytesIO(content),
             crop_type=crop_type,
+            config={
+                "location": location.strip()[:200] or None,
+                "market_region": market_region.strip()[:100] or None,
+            },
         )
-        return JSONResponse(content=result)
+        from fastapi.encoders import jsonable_encoder
+        return JSONResponse(content=jsonable_encoder(result))
     except Exception as e:
         return JSONResponse(
             status_code=500,
