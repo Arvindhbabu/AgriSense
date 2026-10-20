@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 
-def _confidence(value: Any) -> float | None:
+def _confidence(value: Any) -> Optional[float]:
     try:
         score = float(value)
     except (TypeError, ValueError):
@@ -33,7 +33,7 @@ def is_demo_heuristic(diagnosis: Mapping[str, Any]) -> bool:
 
 def assess_diagnosis(
     diagnosis: Mapping[str, Any],
-    min_confidence: float | None = None,
+    min_confidence: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Return a conservative, auditable decision about downstream advice.
 
@@ -45,9 +45,12 @@ def assess_diagnosis(
             threshold = float(os.getenv("AGRISENSE_MIN_CONFIDENCE", "0.70"))
         except ValueError:
             threshold = 0.70
-    if not math.isfinite(float(threshold)) or not 0.0 <= float(threshold) <= 1.0:
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
         threshold = 0.70
-    threshold = float(threshold)
+    if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        threshold = 0.70
 
     label = str(diagnosis.get("label", "unknown")).strip().lower()
     confidence = _confidence(diagnosis.get("confidence"))
