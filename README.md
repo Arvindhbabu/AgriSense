@@ -121,6 +121,25 @@ Never commit real keys, passwords, or local environment files.
 | GET | `/history?limit=20` | List recent saved reports |
 | GET | `/cases/{case_id}` | Retrieve a saved report by UUID |
 
+## Evaluation harness
+
+To compare a baseline classifier with the uncertainty-gated pipeline, create a CSV from the same held-out labelled examples:
+
+```csv
+y_true,y_pred,confidence,review_required
+leaf_spot,leaf_spot,0.82,false
+leaf_blight,unknown,0.43,true
+healthy,healthy,0.91,false
+```
+
+Run the evaluator from the repository root:
+
+```powershell
+python scripts/evaluate_predictions.py --input predictions.csv --output reports/evaluation.json
+```
+
+The JSON report includes per-class precision/recall/F1, macro-F1, a confusion matrix, coverage and selective risk after abstentions, Brier score, and expected calibration error (ECE). To support a defensible experiment, compare baseline and gated predictions on identical examples and report dataset splits, class distribution, and model version. The evaluator does not create labels or improve the model by itself.
+
 ## Tests
 
 ```powershell
