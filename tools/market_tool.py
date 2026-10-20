@@ -84,7 +84,7 @@ class MarketTool:
                     "avg_price_per_kg": None,
                     "trend": "unknown",
                     "source": "data.gov.in Agmarknet resource",
-                    "observed_at": self._now(),
+                    "fetched_at": self._now(),
                     "note": "No matching records returned; verify the configured resource filters and schema.",
                 }
 
@@ -119,7 +119,7 @@ class MarketTool:
                 "price_unit": "INR/kg" if price_per_kg is not None else self.price_unit,
                 "trend": "unknown",
                 "source": "data.gov.in Agmarknet resource",
-                "observed_at": str(arrival_date or self._now()),
+                "observed_at": str(arrival_date) if arrival_date else None,
                 "fetched_at": self._now(),
                 "record_count": len(records),
                 "note": (
@@ -128,14 +128,15 @@ class MarketTool:
                 ),
             }
         except (requests.RequestException, ValueError, TypeError) as exc:
-            logger.warning("Market API lookup failed for crop=%s region=%s: %s", crop, region, exc)
+            # Do not log the exception string: HTTP errors can include the API key in the query URL.
+            logger.warning("Market API lookup failed for crop=%s region=%s (%s)", crop, region, type(exc).__name__)
             return {
                 "crop": crop,
                 "region": region or "India",
                 "avg_price_per_kg": None,
                 "trend": "unknown",
                 "source": "data.gov.in Agmarknet resource",
-                "observed_at": self._now(),
+                "fetched_at": self._now(),
                 "error": "market_provider_unavailable",
                 "note": "Market request failed; check the API key, resource ID, network, and dataset schema.",
             }
