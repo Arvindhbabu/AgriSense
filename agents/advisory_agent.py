@@ -1,8 +1,7 @@
 """Conservative agricultural advisory agent.
 
-Gemini is optional. The template fallback is deliberately non-prescriptive and does
-not invent pesticide rates. Crop- and locality-specific treatment must be verified
-against reliable local extension guidance and official product labels.
+The agent consumes diagnosis plus climate/market evidence. It deliberately avoids
+inventing prices, weather, or chemical rates. Gemini is optional.
 """
 import json
 import logging
@@ -13,30 +12,52 @@ logger = logging.getLogger("agrisense.advisory")
 logger.setLevel(logging.INFO)
 
 
+def _compact_evidence(value: Any) -> Dict[str, Any]:
+    """Pass only decision-relevant fields to the LLM, not full raw forecast payloads."""
+    if not isinstance(value, dict):
+        return {"status": "unavailable"}
+    evidence = value.get("evidence", {})
+    result = {
+        "status": evidence.get("status", "unverified") if isinstance(evidence, dict) else "unverified",
+    }
+    for key in (
+        "crop", "region", "avg_price_per_kg", "trend", "risk",
+        "location", "note", "source", "observed_at", "fetched_at", "timestamp",
+    ):
+        candidate = value.get(key)
+        if candidate is not None and isinstance(candidate, (str, int, float, bool)):
+            result[key] = candidate
+    if isinstance(evidence, dict):
+        for key in ("source", "observed_at", "freshness"):
+            if evidence.get(key) is not None:
+                result["evidence_" + key] = evidence.get(key)
+    return result
+
+
 class AdvisoryAgent:
     def __init__(self, gemini_client=None, language="en"):
         self.gemini = gemini_client
         self.language = language
 
     def _prompt_for_gemini(self, diagnosis: Dict[str, Any], user_memory: Dict[str, Any], crop: str):
-        # Keep prompt context compact; raw model tensors/images should not enter advisory context.
-        market = user_memory.get("_current_market_evidence", {})
-        climate = user_memory.get("_current_climate_evidence", {})
         compact_diagnosis = {
             key: diagnosis.get(key)
-            for key in ("label", "confidence", "notes", "needs_expert_review", "backend", "model_version")
+            for key in (
+                "label", "confidence", "notes", "needs_expert_review",
+                "backend", "model_version", "confidence_calibrated",
+            )
             if diagnosis.get(key) is not None
         }
         context = {
             "crop": crop or "unspecified",
             "location": user_memory.get("location"),
             "diagnosis": compact_diagnosis,
-            "market_evidence": market,
-            "climate_evidence": climate,
+            "market_evidence": _compact_evidence(user_memory.get("_current_market_evidence", {})),
+            "climate_evidence": _compact_evidence(user_memory.get("_current_climate_evidence", {})),
             "language": self.language,
         }
         return (
-            "You are an agricultural decision-support assistant. Use only the facts in this JSON context; "
+            "You are an agricultural decision-support assistant. Use only facts in this JSON context; "
             "do not invent disease evidence, weather, prices, chemical products, or dosages. The diagnosis "
             "is provisional, not ground truth. If diagnosis is unclear or needs expert review, recommend "
             "re-taking a clear image and contacting a local agricultural extension officer, and do not give "
@@ -70,10 +91,10 @@ class AdvisoryAgent:
         mapping = {
             "leaf_blight": (
                 "Provisional next steps:\n"
-                "1. Inspect several plants and photograph both the affected and healthy leaves.\n"
+                "1. Inspect several plants and photograph both affected and healthy leaves.\n"
                 "2. Avoid working through wet foliage; clean tools before moving between affected areas.\n"
                 "3. Remove badly affected material only where appropriate for this crop and local guidance.\n"
-                "4. Confirm the disease with a local agricultural extension officer before selecting a treatment."
+                "4. Confirm the disease locally before selecting a treatment."
             ),
             "leaf_spot": (
                 "Provisional next steps:\n"
@@ -100,11 +121,9 @@ class AdvisoryAgent:
     def run(self, payload: Dict[str, Any]) -> str:
         diagnosis = payload.get("diagnosis", {}) or {}
         user_memory = dict(payload.get("user_memory", {}) or {})
-        crop = payload.get("crop", "unknown")
-
-        # Inject only the evidence summary for this case; do not confuse it with persistent farmer memory.
         user_memory["_current_market_evidence"] = payload.get("market", {})
         user_memory["_current_climate_evidence"] = payload.get("climate", {})
+        crop = payload.get("crop", "unknown")
 
         if self.gemini:
             try:
