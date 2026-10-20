@@ -27,6 +27,9 @@ The API allows localhost:5173 and localhost:3000 by default.
 ## Included UI
 
 - Drag-and-drop image upload and local preview
+- Farm location input for live Open-Meteo forecast context
+- Optional market-state filter for configured data.gov.in/Agmarknet records
+- Image acquisition quality warnings and uncertainty-aware review state
 - Live WebSocket event timeline
 - Uncertainty/review status and reported confidence
 - Evidence status for market and climate integrations
