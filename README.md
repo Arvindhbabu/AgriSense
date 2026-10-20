@@ -8,7 +8,10 @@ AgriSense is a multi-agent crop decision-support prototype with image-based tria
 
 - **Real-time FastAPI API** — multipart image upload, WebSocket progress messages, synchronous analysis endpoint, health check, and input-size/image validation.
 - **Uncertainty-aware decision gate** — flags unknown/invalid/low-confidence predictions and identifies the current RGB color-statistics heuristic as a demo-only method. Crop-specific advice is suppressed in these cases.
-- **Evidence provenance status** — market and climate outputs are labelled unavailable, unverified, or available with supplied provenance.
+- **Image acquisition quality gate** — scores basic brightness, contrast, and resolution signals; severe capture issues ask for a new image instead of trusting model output.
+- **Live weather context** — location input resolves through Open-Meteo and returns a short-range forecast with transparent heat/rain/wind exposure heuristics.
+- **Optional mandi price adapter** — a configurable data.gov.in/Agmarknet resource can return a dated modal price, while unconfigured or unmatched results remain unavailable.
+- **Evidence provenance status** — market and climate outputs are labelled unavailable, unverified, or available with supplied provenance; retrieval time is distinguished from source observation time.
 - **Report persistence and history** — completed reports are written as JSON under `outputs/`; `GET /history` lists recent cases and `GET /cases/{case_id}` retrieves a report.
 - **React + Vite dashboard** — drag-and-drop upload, live pipeline timeline, result/uncertainty cards, evidence status, report export, and saved-case history.
 - **Automated validation** — Python unit tests, compilation checks, and a frontend build in GitHub Actions.
