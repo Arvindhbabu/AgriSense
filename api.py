@@ -6,6 +6,9 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from google import genai
 from PIL import Image
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agents.orchestrator import Orchestrator
 from tools.market_tool import MarketTool
