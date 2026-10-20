@@ -11,7 +11,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
+# Allow both "python scripts/evaluate_predictions.py" and "python -m scripts.evaluate_predictions".
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.evaluation import evaluate_csv
 
 
