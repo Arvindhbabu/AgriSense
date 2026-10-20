@@ -22,6 +22,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from PIL import Image, UnidentifiedImageError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agents.orchestrator import Orchestrator
 from tools.market_tool import MarketTool
