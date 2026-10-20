@@ -138,7 +138,7 @@ def evaluate_predictions(rows: Iterable[Dict[str, Any]], bins: int = 10) -> Dict
         prediction = str(row.get("y_pred", "")).strip()
         if not truth or not prediction:
             raise ValueError("Every row must provide non-empty y_true and y_pred values.")
-        if truth == ABSTAIN_LABEL:
+        if truth == ABSTAIN_LABEL or prediction == ABSTAIN_LABEL:
             raise ValueError(ABSTAIN_LABEL + " is reserved for abstentions.")
         confidence = row.get("confidence")
         if confidence not in (None, ""):
@@ -159,7 +159,10 @@ def evaluate_predictions(rows: Iterable[Dict[str, Any]], bins: int = 10) -> Dict
             "y_eval": ABSTAIN_LABEL if review_required else prediction,
         })
 
-    classes = sorted(set(row["y_true"] for row in normalized))
+    classes = sorted(
+        set(row["y_true"] for row in normalized)
+        | set(row["y_pred"] for row in normalized if not row["review_required"])
+    )
     evaluation_labels = classes + [ABSTAIN_LABEL]
     confusion = {
         truth: {
