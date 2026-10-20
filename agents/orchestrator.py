@@ -92,18 +92,19 @@ def _annotate_evidence(kind: str, value: Any) -> Dict[str, Any]:
     else:
         status = "unverified"
 
-    observed_at = (
-        result.get("observed_at")
-        or result.get("fetched_at")
-        or result.get("timestamp")
-    )
+    observed_at = result.get("observed_at") or result.get("timestamp")
+    retrieved_at = result.get("fetched_at")
     result["evidence"] = {
         "kind": kind,
         "status": status,
         "source": result.get("source"),
         "observed_at": observed_at,
+        "retrieved_at": retrieved_at,
         "checked_at": checked_at,
-        "freshness": "unknown" if not observed_at else "timestamp_provided_not_independently_verified",
+        "freshness": (
+            "unknown" if not observed_at
+            else "source_timestamp_provided_not_independently_verified"
+        ),
     }
     return result
 
