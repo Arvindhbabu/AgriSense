@@ -1,10 +1,10 @@
-"""Orchestrate crop diagnosis, conservative advice, and evidence-aware context.
+"""Orchestrate crop diagnosis, market/climate context, and conservative advisory.
 
-The public run_case signature intentionally supports the real-time API:
+Public API:
     run_case(user_id, image_input, crop_type=None, progress_callback=None)
 
-progress_callback is invoked as progress_callback(step: str, info: str | dict | None).
-All callback failures are isolated so UI telemetry cannot crash an analysis.
+progress_callback receives progress_callback(step: str, info: str | dict | None).
+Callback failures are isolated so frontend telemetry cannot crash an analysis.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def _utc_now() -> str:
 
 
 def _annotate_evidence(kind: str, value: Any) -> Dict[str, Any]:
-    """Mark whether tool data is actually available and whether provenance exists."""
+    """Mark whether tool data is available and whether provenance accompanies it."""
     checked_at = _utc_now()
     if not isinstance(value, dict):
         value = {"value": value}
@@ -92,19 +92,18 @@ def _annotate_evidence(kind: str, value: Any) -> Dict[str, Any]:
     else:
         status = "unverified"
 
+    observed_at = (
+        result.get("observed_at")
+        or result.get("fetched_at")
+        or result.get("timestamp")
+    )
     result["evidence"] = {
         "kind": kind,
         "status": status,
         "source": result.get("source"),
-        "observed_at": (
-            result.get("observed_at")
-            or result.get("fetched_at")
-            or result.get("timestamp")
-        ),
+        "observed_at": observed_at,
         "checked_at": checked_at,
-        "freshness": "unknown" if not (
-            result.get("observed_at") or result.get("fetched_at") or result.get("timestamp")
-        ) else "timestamp_provided_not_independently_verified",
+        "freshness": "unknown" if not observed_at else "timestamp_provided_not_independently_verified",
     }
     return result
 
@@ -155,7 +154,7 @@ class Orchestrator:
         *,
         config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Run the multi-agent pipeline and emit structured progress events."""
+        """Run the agents and emit structured progress events in pipeline order."""
         started = time.monotonic()
         case_id = str(uuid.uuid4())
         config = config or {}
@@ -170,7 +169,6 @@ class Orchestrator:
         emit("case.started", {"case_id": case_id, "user_id": user_id})
         log_event("orchestrator.start", user_id=user_id, case_id=case_id)
 
-        # Create session without allowing an optional session backend to block analysis.
         try:
             session = self.session_service.start_session(user_id)
         except Exception as exc:
@@ -183,8 +181,8 @@ class Orchestrator:
         stored_memory = self.memory.get_user(user_id) or {}
         user_memory = dict(stored_memory)
 
-        # 1. Diagnosis
-        emit("diagnosis.started", {"message": "Validating image and running diagnosis"})
+        # 1. Image-based diagnosis
+        emit("diagnosis.started", {"message": "Validating image and running configured diagnosis backends"})
         try:
             diagnosis = self.diagnosis.run(image_input, crop_type=crop_type)
             if not isinstance(diagnosis, dict):
@@ -193,10 +191,21 @@ class Orchestrator:
             logger.exception("Diagnosis failed for case %s", case_id)
             diagnosis = {"label": "error", "confidence": 0.0, "error": str(exc)}
 
-        gate = assess_diagnosis(
-            diagnosis,
-            min_confidence=self.min_diagnosis_confidence,
+        min_confidence = config.get(
+            "min_diagnosis_confidence",
+            self.min_diagnosis_confidence,
         )
+        gate = assess_diagnosis(diagnosis, min_confidence=min_confidence)
+        if diagnosis.get("needs_expert_review"):
+            gate["review_required"] = True
+            gate["allows_crop_specific_advice"] = False
+            gate["status"] = "review_required"
+            gate["reasons"].append("diagnosis_backend_requested_expert_review")
+            gate["message"] = (
+                "The image model flagged this result for expert review. Capture a clearer image "
+                "and consult a local agricultural extension officer before selecting a treatment."
+            )
+
         emit("diagnosis.completed", {
             "label": diagnosis.get("label", "unknown"),
             "reported_confidence": gate.get("reported_confidence"),
@@ -212,14 +221,38 @@ class Orchestrator:
             decision_status=gate["status"],
         )
 
-        # 2. Advisory — never generate crop-specific treatment for an uncertain/demo result.
+        # 2. Market context, before advisory so it can be included as evidence.
+        emit("market.started", {"message": "Checking configured market-data integration"})
+        try:
+            crop_for_market = crop_type or diagnosis.get("crop") or "unknown"
+            market_info = self.market.get_market_insights(crop_for_market)
+        except Exception as exc:
+            logger.warning("Market agent failed for case %s: %s", case_id, exc)
+            market_info = {"error": str(exc), "note": "Market integration unavailable"}
+        market_info = _annotate_evidence("market", market_info)
+        emit("market.completed", {"evidence_status": market_info["evidence"]["status"]})
+
+        # 3. Climate context, before advisory.
+        emit("climate.started", {"message": "Checking configured weather integration"})
+        try:
+            climate_info = self.climate.assess_location_risk(location=user_memory.get("location"))
+        except Exception as exc:
+            logger.warning("Climate agent failed for case %s: %s", case_id, exc)
+            climate_info = {"error": str(exc), "note": "Weather integration unavailable"}
+        climate_info = _annotate_evidence("climate", climate_info)
+        emit("climate.completed", {"evidence_status": climate_info["evidence"]["status"]})
+
+        # 4. Advisory receives the context results, but a review-required diagnosis blocks
+        # crop-specific advice regardless of its reported numeric confidence.
         if gate["allows_crop_specific_advice"]:
-            emit("advisory.started", {"message": "Generating provisional guidance"})
+            emit("advisory.started", {"message": "Generating provisional guidance using available evidence"})
             try:
                 advice = self.advisory.run({
                     "diagnosis": diagnosis,
                     "user_memory": user_memory,
                     "crop": crop_type,
+                    "market": market_info,
+                    "climate": climate_info,
                 })
                 advisory_mode = "agent_generated_provisional"
             except Exception as exc:
@@ -232,32 +265,9 @@ class Orchestrator:
             })
             advice = _conservative_advice()
             advisory_mode = "uncertainty_guard"
-
         emit("advisory.completed", {"mode": advisory_mode})
 
-        # 3. Market context
-        emit("market.started", {"message": "Checking configured market-data integration"})
-        try:
-            crop_for_market = crop_type or diagnosis.get("crop") or "unknown"
-            market_info = self.market.get_market_insights(crop_for_market)
-        except Exception as exc:
-            logger.warning("Market agent failed for case %s: %s", case_id, exc)
-            market_info = {"error": str(exc), "note": "Market integration unavailable"}
-        market_info = _annotate_evidence("market", market_info)
-        emit("market.completed", {"evidence_status": market_info["evidence"]["status"]})
-
-        # 4. Climate context
-        emit("climate.started", {"message": "Checking configured weather integration"})
-        try:
-            climate_info = self.climate.assess_location_risk(
-                location=user_memory.get("location")
-            )
-        except Exception as exc:
-            logger.warning("Climate agent failed for case %s: %s", case_id, exc)
-            climate_info = {"error": str(exc), "note": "Weather integration unavailable"}
-        climate_info = _annotate_evidence("climate", climate_info)
-        emit("climate.completed", {"evidence_status": climate_info["evidence"]["status"]})
-
+        duration_ms = round((time.monotonic() - started) * 1000, 2)
         report = {
             "case_id": case_id,
             "status": "completed",
@@ -275,7 +285,7 @@ class Orchestrator:
             "session": session.to_dict() if hasattr(session, "to_dict") else {},
             "run_metadata": {
                 "pipeline": "agrisense-evidence-gated-v1",
-                "duration_ms": round((time.monotonic() - started) * 1000, 2),
+                "duration_ms": duration_ms,
                 "confidence_calibrated": gate.get("confidence_calibrated", False),
                 "config": {
                     "min_diagnosis_confidence": gate.get("minimum_confidence"),
@@ -283,7 +293,6 @@ class Orchestrator:
             },
         }
 
-        # Save a compact last-case record; preserve farmer profile fields such as location.
         user_memory.update({
             "last_case_id": case_id,
             "last_diag": diagnosis,
@@ -301,12 +310,9 @@ class Orchestrator:
             "orchestrator.end",
             user_id=user_id,
             case_id=case_id,
-            duration_ms=report["run_metadata"]["duration_ms"],
+            duration_ms=duration_ms,
         )
-        emit("case.completed", {
-            "case_id": case_id,
-            "duration_ms": report["run_metadata"]["duration_ms"],
-        })
+        emit("case.completed", {"case_id": case_id, "duration_ms": duration_ms})
         return report
 
 
