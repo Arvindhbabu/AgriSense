@@ -22,8 +22,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from PIL import Image, UnidentifiedImageError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from agents.orchestrator import Orchestrator
+from tools.market_tool import MarketTool
+from tools.weather_tool import WeatherTool
 
 logger = logging.getLogger("agrisense.realtime")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -51,6 +56,8 @@ def _create_gemini_client():
 orchestrator = Orchestrator(
     gemini_client=_create_gemini_client(),
     mcp_gateway_url=os.getenv("MCP_GATEWAY_URL"),
+    market_tool=MarketTool(),
+    weather_tool=WeatherTool(),
 )
 
 app = FastAPI(
@@ -120,6 +127,8 @@ async def _run_analysis(
     user_id: str,
     crop_type: str,
     image_bytes: bytes,
+    location: Optional[str] = None,
+    market_region: Optional[str] = None,
 ) -> None:
     loop = asyncio.get_running_loop()
 
@@ -139,6 +148,7 @@ async def _run_analysis(
             io.BytesIO(image_bytes),
             crop_type,
             progress_callback,
+            config={"location": location, "market_region": market_region},
         )
         encoded_result = jsonable_encoder(result)
         saved_path = await asyncio.to_thread(_persist_result, result)
@@ -216,6 +226,8 @@ async def upload_start(
     file: UploadFile = File(...),
     crop_type: str = Form("wheat"),
     user_id: str = Form("farmer_web"),
+    location: str = Form(""),
+    market_region: str = Form(""),
 ):
     _prune_sessions()
 
@@ -246,11 +258,16 @@ async def upload_start(
 
     clean_user_id = user_id.strip()[:120] or "farmer_web"
     clean_crop_type = crop_type.strip()[:80] or "unknown"
+    clean_location = location.strip()[:200] or None
+    clean_market_region = market_region.strip()[:100] or None
     session_id = str(uuid.uuid4())
     state = SessionState()
     sessions[session_id] = state
     asyncio.create_task(
-        _run_analysis(session_id, state, clean_user_id, clean_crop_type, content),
+        _run_analysis(
+            session_id, state, clean_user_id, clean_crop_type, content,
+            clean_location, clean_market_region,
+        ),
         name=f"agrisense-analysis-{session_id}",
     )
 
@@ -294,6 +311,8 @@ async def analyze_now(
     file: UploadFile = File(...),
     crop_type: str = Form("wheat"),
     user_id: str = Form("farmer_api"),
+    location: str = Form(""),
+    market_region: str = Form(""),
 ):
     """Synchronous API for clients that do not need WebSocket progress."""
     if file.content_type and not file.content_type.startswith("image/"):
@@ -315,6 +334,10 @@ async def analyze_now(
             user_id.strip()[:120] or "farmer_api",
             io.BytesIO(content),
             crop_type.strip()[:80] or "unknown",
+            config={
+                "location": location.strip()[:200] or None,
+                "market_region": market_region.strip()[:100] or None,
+            },
         )
         saved_path = await asyncio.to_thread(_persist_result, result)
         encoded = jsonable_encoder(result)

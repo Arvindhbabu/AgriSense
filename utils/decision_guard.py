@@ -24,10 +24,14 @@ def _confidence(value: Any) -> Optional[float]:
 def is_demo_heuristic(diagnosis: Mapping[str, Any]) -> bool:
     """Detect the current RGB-statistics fallback used by DiagnosisAgent."""
     raw = diagnosis.get("raw")
+    backend = str(diagnosis.get("backend", "")).strip().lower()
     return (
-        isinstance(raw, Mapping)
-        and {"r", "g", "b"}.issubset({str(key).lower() for key in raw.keys()})
-        and not diagnosis.get("model_version")
+        backend == "demo_rgb_heuristic"
+        or (
+            isinstance(raw, Mapping)
+            and {"r", "g", "b"}.issubset({str(key).lower() for key in raw.keys()})
+            and not diagnosis.get("model_version")
+        )
     )
 
 

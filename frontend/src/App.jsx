@@ -31,6 +31,8 @@ export default function App() {
   const [file, setFile] = useState(null);
   const [cropType, setCropType] = useState("wheat");
   const [userId, setUserId] = useState("farmer_web");
+  const [location, setLocation] = useState("");
+  const [marketRegion, setMarketRegion] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState("checking");
@@ -98,6 +100,8 @@ export default function App() {
       formData.append("file", file);
       formData.append("crop_type", cropType);
       formData.append("user_id", userId.trim() || "farmer_web");
+      formData.append("location", location.trim());
+      formData.append("market_region", marketRegion.trim());
       const response = await fetch(API_BASE + "/upload-start", { method: "POST", body: formData });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not start analysis.");
@@ -164,6 +168,7 @@ export default function App() {
   };
 
   const diagnosis = result?.diagnosis || {};
+  const imageQuality = diagnosis.image_quality || null;
   const gate = result?.diagnosis_gate || {};
   const reviewRequired = gate.review_required ?? true;
   const confidence = gate.reported_confidence ?? diagnosis.confidence;
@@ -217,6 +222,10 @@ export default function App() {
                 <label>Crop type<select value={cropType} onChange={(e) => setCropType(e.target.value)}><option value="wheat">Wheat</option><option value="rice">Rice</option><option value="tomato">Tomato</option><option value="potato">Potato</option><option value="maize">Maize</option><option value="cotton">Cotton</option><option value="other">Other / unspecified</option></select></label>
                 <label>Farmer / session ID<input value={userId} onChange={(e) => setUserId(e.target.value)} maxLength={120} placeholder="farmer_web" /></label>
               </div>
+              <div className="form-row form-row-extra">
+                <label>Farm location for weather<input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={200} placeholder="City or latitude,longitude" /></label>
+                <label>Market state (optional)<input value={marketRegion} onChange={(e) => setMarketRegion(e.target.value)} maxLength={100} placeholder="Tamil Nadu" /></label>
+              </div>
               <div className="upload-footer"><div className="privacy-note"><span>▣</span><p>Image is processed by your configured local API.<br /><b>Not a confirmed agricultural diagnosis.</b></p></div><button className="primary-button" type="submit" disabled={busy || connection === "offline"}>{busy ? <><span className="spinner" /> Analyzing…</> : <>Run assessment <span>↗</span></>}</button></div>
             </form>
           </article>
@@ -245,6 +254,7 @@ export default function App() {
                 <h3>{String(diagnosis.label || "Unknown").replaceAll("_", " ")}</h3><p>{gate.message || "Treat this output as a candidate, not a confirmed diagnosis."}</p>
                 <div className="confidence-row"><span>Reported confidence</span><strong>{formatConfidence(confidence)}</strong></div><div className="confidence-track"><span style={{ width: formatConfidence(confidence) }} /></div>
                 <small className="muted-caption">{gate.confidence_calibrated ? "Calibration status: provided by model" : "Confidence has not been independently calibrated."}</small>
+                {imageQuality && <div className="image-quality-summary"><div><span>Image acquisition score</span><strong>{formatConfidence(imageQuality.quality_score)}</strong></div><p>{imageQuality.review_required ? "Retake recommended — image conditions require review." : "Basic capture checks passed; this is not a disease-confidence score."}</p>{imageQuality.warnings?.length > 0 && <small>{imageQuality.warnings.map((warning) => warning.replaceAll("_", " ")).join(" · ")}</small>}</div>}
                 {gate.reasons?.length > 0 && <div className="reason-list">{gate.reasons.map((reason) => <span key={reason}>• {reason.replaceAll("_", " ")}</span>)}</div>}
               </article>
               <article className="result-card advisory-card"><div className="result-card-top"><span>FIELD GUIDANCE</span><span className="neutral-pill">{String(result.advisory_mode || "Advisory").replaceAll("_", " ")}</span></div><h3>Recommended next step</h3><p className="advice-text">{result.advice || "No advice was returned."}</p><div className="safety-callout"><span>!</span><p>{result.safety_note || "Verify recommendations with a qualified local agricultural source before treatment."}</p></div></article>

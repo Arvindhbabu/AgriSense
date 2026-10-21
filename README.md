@@ -8,7 +8,10 @@ AgriSense is a multi-agent crop decision-support prototype with image-based tria
 
 - **Real-time FastAPI API** — multipart image upload, WebSocket progress messages, synchronous analysis endpoint, health check, and input-size/image validation.
 - **Uncertainty-aware decision gate** — flags unknown/invalid/low-confidence predictions and identifies the current RGB color-statistics heuristic as a demo-only method. Crop-specific advice is suppressed in these cases.
-- **Evidence provenance status** — market and climate outputs are labelled unavailable, unverified, or available with supplied provenance.
+- **Image acquisition quality gate** — scores basic brightness, contrast, and resolution signals; severe capture issues ask for a new image instead of trusting model output.
+- **Live weather context** — location input resolves through Open-Meteo and returns a short-range forecast with transparent heat/rain/wind exposure heuristics.
+- **Optional mandi price adapter** — a configurable data.gov.in/Agmarknet resource can return a dated modal price, while unconfigured or unmatched results remain unavailable.
+- **Evidence provenance status** — market and climate outputs are labelled unavailable, unverified, or available with supplied provenance; retrieval time is distinguished from source observation time.
 - **Report persistence and history** — completed reports are written as JSON under `outputs/`; `GET /history` lists recent cases and `GET /cases/{case_id}` retrieves a report.
 - **React + Vite dashboard** — drag-and-drop upload, live pipeline timeline, result/uncertainty cards, evidence status, report export, and saved-case history.
 - **Automated validation** — Python unit tests, compilation checks, and a frontend build in GitHub Actions.
@@ -78,9 +81,27 @@ Open the Vite URL shown in the terminal (normally http://127.0.0.1:5173).
 
 The dashboard can set its API location using `frontend/.env.example` as a template. Default API URL is `http://127.0.0.1:8000`.
 
-## Environment variables
+## Configure live context providers
 
-Copy `.env.example` to a local `.env`, then fill in only the integrations you actually use. Or set variables directly in the shell:
+### Weather
+
+The dashboard's **Farm location** field accepts a city/region name or `latitude,longitude`. The adapter resolves names with the Open-Meteo Geocoding API and requests a short-range forecast from the Open-Meteo Forecast API. These are general weather-exposure heuristics (heat, heavy rain, wind), **not a crop-disease forecast**. The report distinguishes forecast retrieval time from a source observation time. Review the provider's [API documentation](https://open-meteo.com/en/docs) and [geocoding documentation](https://open-meteo.com/en/docs/geocoding-api).
+
+### Mandi market prices (optional)
+
+AgriSense can query an Agmarknet resource through India's [Open Government Data mandi-price dataset](https://www.data.gov.in/resource/current-daily-price-various-commodities-various-markets-mandi). To enable it, register for a data.gov.in API key and select the resource ID that you will query. Add these values to your local `.env`:
+
+```dotenv
+DATA_GOV_IN_API_KEY=your_data_gov_in_key
+DATA_GOV_IN_MARKET_RESOURCE_ID=your_selected_resource_id
+DATA_GOV_IN_PRICE_UNIT=quintal
+```
+
+The adapter assumes the configured resource's modal price is per quintal by default and converts it to INR/kg. Set `DATA_GOV_IN_PRICE_UNIT=kg` only when your chosen dataset actually reports prices per kilogram. Resource schemas vary; verify that the selected resource returns the expected commodity, state, market, date, and price columns. A single record does not establish a price trend, so trend remains `unknown` rather than being fabricated.
+
+### Optional LLM / MCP integrations
+
+Copy `.env.example` to a local `.env`, then fill in only the integrations you actually use. Or set variables directly in PowerShell:
 
 ```powershell
 $env:GEMINI_API_KEY = "your-key"
@@ -99,6 +120,25 @@ Never commit real keys, passwords, or local environment files.
 | POST | `/analyze` | Run analysis without a WebSocket progress stream |
 | GET | `/history?limit=20` | List recent saved reports |
 | GET | `/cases/{case_id}` | Retrieve a saved report by UUID |
+
+## Evaluation harness
+
+To compare a baseline classifier with the uncertainty-gated pipeline, create a CSV from the same held-out labelled examples:
+
+```csv
+y_true,y_pred,confidence,review_required
+leaf_spot,leaf_spot,0.82,false
+leaf_blight,unknown,0.43,true
+healthy,healthy,0.91,false
+```
+
+Run the evaluator from the repository root:
+
+```powershell
+python scripts/evaluate_predictions.py --input predictions.csv --output reports/evaluation.json
+```
+
+The JSON report includes per-class precision/recall/F1, macro-F1, a confusion matrix, coverage and selective risk after abstentions, Brier score, and expected calibration error (ECE). To support a defensible experiment, compare baseline and gated predictions on identical examples and report dataset splits, class distribution, and model version. The evaluator does not create labels or improve the model by itself.
 
 ## Tests
 
